@@ -165,3 +165,5 @@ async def handle_chat(input: ChatInput):
 @app.get("/")
 def read_root():
     return {"status": "Online", "database": "MongoDB Atlas Connected"}
+
+#Prueba de flujo de tranajo por fer
