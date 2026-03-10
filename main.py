@@ -6,9 +6,8 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional, Dict, Any
-# 👇 NUEVO: Importamos el conector de Mongo
 from pymongo import MongoClient
-
+# Aqui estaran las nuevas librerias
 # --- 1. CONFIGURACIÓN INICIAL ---
 load_dotenv()
 
