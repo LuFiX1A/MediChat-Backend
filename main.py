@@ -6,8 +6,13 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional, Dict, Any
-# 👇 NUEVO: Importamos el conector de Mongo
 from pymongo import MongoClient
+# 👇 NUEVO: Importamos los módulos adicionales
+import shutil   # Para copiar archivos
+import random   # Para la simulación (mock)
+import uuid     # Para generar nombres únicos de fotos
+from fastapi.staticfiles import StaticFiles # Para servir las fotos
+from fastapi import UploadFile, File # Para recibir archivos
 
 # --- 1. CONFIGURACIÓN INICIAL ---
 load_dotenv()
