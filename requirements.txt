@@ -8,3 +8,5 @@ pydantic
 requests
 httpx
 pymongo
+python-multipart==0.0.22
+aiofiles==25.1.0
