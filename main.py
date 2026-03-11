@@ -1,170 +1,99 @@
 import os
 import json
-import google.generativeai as genai
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from pymongo import MongoClient
-# Aqui estaran las nuevas librerias
-# --- 1. CONFIGURACIÓN INICIAL ---
+from dotenv import load_dotenv
+import sys
+# Esto le dice a Python: "Mira también en la carpeta donde estás parado"
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from services.burn_service import setup_storage, process_burn_logic
+from services.gemini_service import obtener_respuesta_gemini
+
+# --- 2. CONFIGURACIÓN INICIAL ---
 load_dotenv()
 
 app = FastAPI(
     title="API del Chatbot de Telemedicina",
-    description="Backend optimizado con MongoDB Atlas y JSON Mode."
+    description="Backend optimizado y modularizado."
 )
 
-# --- 2. CONFIGURACIÓN DE CORS ---
-origins = ["*"]
+# --- 3. CONFIGURACIÓN DE CORS ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- 3. CONEXIÓN A MONGODB ATLAS (NUEVO) ---
+# --- 4. CONEXIÓN A MONGODB ATLAS ---
 MONGO_URI = os.getenv('MONGO_URI')
-
-# Verificamos que exista para no romper todo
 if not MONGO_URI:
     raise ValueError("No se encontró la MONGO_URI en el archivo .env")
 
 try:
     mongo_client = MongoClient(MONGO_URI)
-    db = mongo_client["VirtualMedDB"]  # Base de datos correcta
-    collection = db["doctors"]         # Colección correcta
-    # Ping rápido para verificar conexión al iniciar
+    db = mongo_client["VirtualMedDB"]
+    collection = db["doctors"]
     mongo_client.admin.command('ping')
     print("✅ ¡Conexión exitosa a MongoDB Atlas!")
 except Exception as e:
     print(f"❌ Error CRÍTICO conectando a Mongo: {e}")
 
-# --- 4. CONFIGURACIÓN DE IA (Gemini BLINDADO) ---
-GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
-if not GOOGLE_API_KEY:
-    raise ValueError("No se encontró la GOOGLE_API_KEY en el .env")
-
-genai.configure(api_key=GOOGLE_API_KEY)
-
-# A. SAFETY SETTINGS
-safety_settings = [
-    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-]
-
-# B. MODELO
-generation_config = {
-    "temperature": 0.5,
-    "top_p": 1, 
-    "max_output_tokens": 2048,
-    "response_mime_type": "application/json" 
-}
-
-# Usamos la versión estable 2.5-flash
-model = genai.GenerativeModel(
-    model_name="gemini-2.5-flash", 
-    generation_config=generation_config,
-    safety_settings=safety_settings
-)
+# Preparar almacenamiento de fotos y montar estáticos
+setup_storage()
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # --- 5. MODELOS DE DATOS ---
 class ChatInput(BaseModel):
     user_id: Optional[str] = "anonimo"
     mensaje: str
     contexto_medico: Optional[str] = "Ninguno"
+    grado_ia: Optional[int] = None  # <-- IMPORTANTE: Ahora l chat puede recibir el grado
 
 class ChatOutput(BaseModel):
     respuesta: Dict[str, Any]
 
-# --- 6. ENDPOINT DEL CHAT (Lógica Renovada con Mongo) ---
+# --- 6. ENDPOINT DEL CHAT (Lógica Unificada) ---
 @app.post("/chat", response_model=ChatOutput)
 async def handle_chat(input: ChatInput):
     try:
-        # PASO A: Leer doctores de MongoDB en tiempo real
-        # Esto reemplaza la lectura del CSV
+        # PASO A: Leer doctores de MongoDB
         texto_doctores_mongo = ""
-        try:
-            cursor_doctores = collection.find({})
-            for doc in cursor_doctores:
-                # Mapeamos los campos de Mongo a texto para la IA
-                mongo_id = str(doc.get("_id", "")) # ID único
-                nombre = doc.get("nombre", "")
-                apellido = doc.get("apellido", "")
-                nombre_completo = f"{nombre} {apellido}"
-                
-                especialidad = doc.get("especialidad", "Medicina General")
-                subespecialidad = doc.get("subespecialidad", "")
-                
-                info = f"- ID: {mongo_id} | Dr/a: {nombre_completo} | Esp: {especialidad}"
-                if subespecialidad:
-                    info += f" ({subespecialidad})"
-                
-                texto_doctores_mongo += info + "\n"
-                
-        except Exception as e_mongo:
-            print(f"Error leyendo Mongo en request: {e_mongo}")
-            texto_doctores_mongo = "Error al acceder a la base de datos de doctores."
+        cursor_doctores = collection.find({})
+        for doc in cursor_doctores:
+            mongo_id = str(doc.get("_id", ""))
+            nombre = doc.get("nombre", "")
+            apellido = doc.get("apellido", "")
+            especialidad = doc.get("especialidad", "Medicina General")
+            texto_doctores_mongo += f"- ID: {mongo_id} | Dr/a: {nombre} {apellido} | Esp: {especialidad}\n"
 
-        # PASO B: Prompt 
-        prompt = f"""
-        Eres MediChat, un asistente médico de triaje inteligente.
-        
-        TUS DATOS (DOCTORES DISPONIBLES EN BASE DE DATOS):
-        {texto_doctores_mongo}
-        
-        INPUT DEL USUARIO:
-        - Historial/Contexto: {input.contexto_medico}
-        - Mensaje actual: "{input.mensaje}"
-        
-        INSTRUCCIONES:
-        1. Analiza si el usuario describe síntomas, dolores o dudas médicas.
-        2. Si NO es tema médico, responde educadamente que no puedes ayudar.
-        3. Si ES tema médico:
-           - Identifica la especialidad necesaria.
-           - Busca en la lista de doctores arriba quién es el MÁS adecuado.
-           - Si no hay especialista exacto, sugiere uno afín o Medicina General.
-           
-        FORMATO DE RESPUESTA JSON (OBLIGATORIO):
-        {{
-            "es_medico": true/false,
-            "mensaje_al_usuario": "Tu respuesta empática y clara aquí...",
-            "recomendaciones": [
-                {{
-                    "id_doctor": "El ID exacto de la lista (mongo_id)",
-                    "nombre": "Nombre del doctor",
-                    "especialidad": "Su especialidad",
-                    "motivo": "Breve razón de por qué este doctor sirve"
-                }}
-            ]
-        }}
-        """
-
-        # Llamada a Gemini (Async)
-        response = await model.generate_content_async(prompt)
-        
-        # Limpieza y parseo
-        json_str = response.text.strip()
-        parsed_response = json.loads(json_str)
+        # PASO B: Llamar al servicio de Gemini (Ahora él tiene toda la configuración)
+        parsed_response = await get_chat_response(
+            mensaje_usuario=input.mensaje,
+            contexto_medico=input.contexto_medico,
+            texto_doctores_mongo=texto_doctores_mongo,
+            grado_ia=input.grado_ia
+        )
 
         return ChatOutput(respuesta=parsed_response)
 
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="Error de formato IA (No JSON).")
     except Exception as e:
-        print(f"Error general: {e}")
+        print(f"Error general en el endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- 7. ENDPOINT DE PRUEBA ---
+# --- 7. ENDPOINT DE ANÁLISIS DE IMAGEN ---
+@app.post("/analyze-burn")
+async def analyze_burn(file: UploadFile = File(...)):
+    # Delegamos el guardado y la simulación al servicio
+    return await process_burn_logic(file)
+
+# --- 8. ENDPOINT DE PRUEBA ---
 @app.get("/")
 def read_root():
-    return {"status": "Online", "database": "MongoDB Atlas Connected"}
-
-#Prueba de flujo de tranajo por fer
-
-#Segunda prueba de comentario en equipo
+    return {"status": "Online", "database": "Connected"}
