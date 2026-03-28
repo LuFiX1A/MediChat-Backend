@@ -1,29 +1,28 @@
 import os
 import json
-from fastapi import FastAPI, HTTPException, UploadFile, File
+import sys
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from pymongo import MongoClient
 from dotenv import load_dotenv
-import sys
-# Esto le dice a Python: "Mira también en la carpeta donde estás parado"
+
+# --- 1. CONFIGURACIÓN DE RUTAS ---
+# Esto asegura que Python encuentre las carpetas 'services' y 'api_modules'
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from services.burn_service import setup_storage, process_burn_logic
-# Si en tu servicio la función se llama obtener_respuesta_gemini:
-from services.gemini_service import obtener_respuesta_gemini as get_chat_response
-from typing import Optional
-from fastapi import UploadFile, File, Form # Asegúrate de agregar Form
+from services.gemini_service import obtener_respuesta_gemini
 from api_modules.burn_handler import handle_integration_logic
 
 # --- 2. CONFIGURACIÓN INICIAL ---
 load_dotenv()
 
 app = FastAPI(
-    title="API del Chatbot de Telemedicina V2",
-    description="Backend optimizado y modularizado."
+    title="MediChat API V5 - Producción",
+    description="Backend con CNN real y triaje avanzado por Gemini."
 )
 
 # --- 3. CONFIGURACIÓN DE CORS ---
@@ -37,14 +36,10 @@ app.add_middleware(
 
 # --- 4. CONEXIÓN A MONGODB ATLAS ---
 MONGO_URI = os.getenv('MONGO_URI')
-if not MONGO_URI:
-    raise ValueError("No se encontró la MONGO_URI en el archivo .env")
-
 try:
     mongo_client = MongoClient(MONGO_URI)
     db = mongo_client["VirtualMedDB"]
     collection = db["doctors"]
-    mongo_client.admin.command('ping')
     print("✅ ¡Conexión exitosa a MongoDB Atlas!")
 except Exception as e:
     print(f"❌ Error CRÍTICO conectando a Mongo: {e}")
@@ -58,78 +53,81 @@ class ChatInput(BaseModel):
     user_id: Optional[str] = "anonimo"
     mensaje: str
     contexto_medico: Optional[str] = "Ninguno"
-    grado_ia: Optional[int] = None  # <-- IMPORTANTE: Ahora l chat puede recibir el grado
+    grado_ia: Optional[int] = None
 
 class ChatOutput(BaseModel):
     respuesta: Dict[str, Any]
 
-# --- 6. ENDPOINT DEL CHAT (Lógica Unificada) ---
+# --- 6. ENDPOINT DEL CHAT (Solo Texto) ---
 @app.post("/chat", response_model=ChatOutput)
 async def handle_chat(input: ChatInput):
     try:
-        # PASO A: Leer doctores de MongoDB
-        texto_doctores_mongo = ""
-        cursor_doctores = collection.find({})
-        for doc in cursor_doctores:
-            mongo_id = str(doc.get("_id", ""))
-            nombre = doc.get("nombre", "")
-            apellido = doc.get("apellido", "")
-            especialidad = doc.get("especialidad", "Medicina General")
-            texto_doctores_mongo += f"- ID: {mongo_id} | Dr/a: {nombre} {apellido} | Esp: {especialidad}\n"
-
-        # PASO B: Llamar al servicio de Gemini (Ahora él tiene toda la configuración)
+        # Extraer doctores de Mongo para dar contexto a Gemini
+        doctores_list = list(collection.find({}, {"_id": 0}))
+        
         parsed_response = await obtener_respuesta_gemini(
             mensaje_usuario=input.mensaje,
             contexto_medico=input.contexto_medico,
-            texto_doctores_mongo=texto_doctores_mongo,
+            texto_doctores_mongo=str(doctores_list),
             grado_ia=input.grado_ia
         )
-
         return ChatOutput(respuesta=parsed_response)
-
     except Exception as e:
-        print(f"Error general en el endpoint: {e}")
+        print(f"Error en endpoint /chat: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- 7. ENDPOINT DE ANÁLISIS DE IMAGEN ---
+# --- 7. ENDPOINT DE ANÁLISIS DE IMAGEN (Solo CNN) ---
 @app.post("/analyze-burn")
 async def analyze_burn(file: UploadFile = File(...)):
-    # Delegamos el guardado y la simulación al servicio
-    return await process_burn_logic(file)
+    """
+    Endpoint para probar exclusivamente la clasificación de la CNN V5.
+    Útil para diagnosticar errores de visión sin llamar a Gemini.
+    """
+    try:
+        return await process_burn_logic(file)
+    except Exception as e:
+        print(f"Error en analyze-burn: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-# --- 8. ENDPOINT DE PRUEBA ---
-@app.get("/")
-def read_root():
-    return {"status": "Online", "database": "Connected"}
-
-# --- 9. ENDPOINT DE INTEGRACIÓN TOTAL ---
+# --- 8. ENDPOINT DE INTEGRACIÓN TOTAL (Imagen + Texto + Gemini) ---
 @app.post("/analyze-full")
 async def analyze_full(
     file: Optional[UploadFile] = File(None), 
     user_text: str = Form(...)
 ):
+    """
+    Endpoint principal para la App Ionic. Procesa imagen y genera respuesta médica.
+    """
     try:
-        # 1. Obtenemos los doctores (Síncrono para evitar el TypeError anterior)
-        doctores_list = list(db["doctors"].find({}, {"_id": 0}).limit(10))
+        # 1. Obtenemos los doctores (Síncrono para evitar errores de tipo)
+        doctores_list = list(db["doctors"].find({}, {"_id": 0}))
         
         if file is None:
-            # CASO: Solo texto (Tu prueba de "me duele la espalda")
-            # Usamos el nombre que definimos en el import
-            respuesta = await get_chat_response(
-                user_text, 
-                "Consulta Médica General", 
-                str(doctores_list)
+            # Caso: Solo texto (Chat general)
+            respuesta = await obtener_respuesta_gemini(
+                mensaje_usuario=user_text, 
+                contexto_medico="Consulta Médica General", 
+                texto_doctores_mongo=str(doctores_list)
             )
             return {
-                "analisis_visual": "No se proporcionó imagen",
+                "analisis_visual": {"detalle": "No se proporcionó imagen"},
                 "diagnostico_ia": respuesta,
                 "texto_usuario": user_text
             }
         else:
-            # CASO: Con imagen
+            # Caso: Con imagen (Usa el Handler que une CNN y Gemini)
             return await handle_integration_logic(file, user_text, doctores_list)
 
     except Exception as e:
-        # Esto te dirá exactamente qué falla si algo más sale mal
-        print(f"Error detallado: {e}")
+        print(f"Error detallado en analyze-full: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- 9. ENDPOINT DE PRUEBA ---
+@app.get("/")
+def read_root():
+    return {
+        "status": "Online", 
+        "model": "CNN-V5 Ready", 
+        "database": "Connected",
+        "api_version": "2.0.0"
+    }

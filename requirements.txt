@@ -1,4 +1,4 @@
-# --- LIBRERÍAS PRINCIPALES (Mantenemos todo lo que pediste) ---
+# --- LIBRERÍAS PRINCIPALES ---
 fastapi>=0.115.0
 uvicorn>=0.30.0
 gunicorn>=23.0.0
@@ -7,23 +7,21 @@ python-dotenv>=1.0.1
 
 # --- INTELIGENCIA ARTIFICIAL Y GOOGLE ---
 google-generativeai>=0.8.0
-google-api-python-client
-google-auth
-google-api-core
-googleapis-common-protos
-grpcio
-grpcio-status
-protobuf
+protobuf>=5.26.1,<6.0.0dev
 
 # --- BASE DE DATOS Y PROCESAMIENTO ---
 pymongo>=4.9.0
 pandas>=2.2.0
-numpy>=1.26.0
+numpy>=1.26.0,<2.0.0
 opencv-python-headless>=4.10.0.0
 
 # --- UTILIDADES ---
 requests>=2.32.0
 httpx>=0.27.0
 pydantic>=2.9.0
-annotated-types
 typing-extensions
+
+# --- LIBRERÍAS PARA EL MODELO .H5 ---
+# Forzamos 2.16.1 porque es la mínima estable para Python 3.12 en Render
+tensorflow-cpu>=2.16.1
+pillow>=10.0.0

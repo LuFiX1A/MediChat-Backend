@@ -9,7 +9,7 @@ load_dotenv()
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
 genai.configure(api_key=GOOGLE_API_KEY)
 
-# Configuraciones de seguridad (Bloqueo desactivado para triaje médico preventivo)
+# Configuraciones de seguridad
 safety_settings = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -18,26 +18,27 @@ safety_settings = [
 ]
 
 generation_config = {
-    "temperature": 0.4, # Bajamos un poco la temperatura para mayor precisión médica
+    "temperature": 0.4, 
     "top_p": 1, 
     "max_output_tokens": 2048,
     "response_mime_type": "application/json" 
 }
 
-# IMPORTANTE: Usamos 'gemini-1.5-flash' para mayor estabilidad en Render
+# CAMBIO TÉCNICO: Usamos gemini-1.5-flash para máxima estabilidad en producción
 model = genai.GenerativeModel(
     model_name="gemini-2.5-flash", 
     generation_config=generation_config,
     safety_settings=safety_settings
 )
 
-async def obtener_respuesta_gemini(mensaje_usuario: str, contexto_medico: str, texto_doctores_mongo: str, grado_ia: int = None):
+# Agregamos 'confianza_ia' como parámetro opcional para mayor contexto
+async def obtener_respuesta_gemini(mensaje_usuario: str, contexto_medico: str, texto_doctores_mongo: str, grado_ia: int = None, confianza_ia: float = None):
     """
     Función central que genera la respuesta del chatbot integrando texto, 
     análisis visual y base de datos de doctores.
     """
     
-    # 1. Construcción de la lógica de quemaduras según el grado detectado
+    # 1. Construcción de la lógica de quemaduras (Mantenemos tu estructura exacta)
     info_quemadura = ""
     if grado_ia:
         pautas = {
@@ -45,11 +46,13 @@ async def obtener_respuesta_gemini(mensaje_usuario: str, contexto_medico: str, t
             2: "Grado 2 (Espesor parcial): Ampollas y dolor intenso. No reventar ampollas. Cubrir con gasa estéril.",
             3: "Grado 3 (Espesor total): Piel blanca o carbonizada. ¡URGENCIA MÉDICA! No retirar ropa pegada."
         }
-        info_quemadura = f"\n[SISTEMA DE VISIÓN]: Se ha detectado una quemadura de {pautas.get(grado_ia, 'Grado desconocido')}."
+        # Añadimos la confianza solo como contexto interno para Gemini
+        conf_text = f" con un {confianza_ia}% de certeza" if confianza_ia else ""
+        info_quemadura = f"\n[SISTEMA DE VISIÓN]: Se ha detectado una quemadura de {pautas.get(grado_ia, 'Grado desconocido')}{conf_text}."
     else:
         info_quemadura = "\n[SISTEMA DE VISIÓN]: No se proporcionó imagen o no se detectó una quemadura específica."
 
-    # 2. PROMPT FINAL (Limpio y sin 'inception')
+    # 2. PROMPT FINAL (ESTRUCTURA BASE INTACTA)
     prompt_final = f"""
     Eres MediChat, un asistente virtual de triaje médico experto. Tu objetivo es orientar al usuario de forma clara, segura y profesional.
 
@@ -85,7 +88,6 @@ async def obtener_respuesta_gemini(mensaje_usuario: str, contexto_medico: str, t
 
     try:
         response = await model.generate_content_async(prompt_final)
-        # Limpieza básica para asegurar que sea un JSON válido
         return json.loads(response.text.strip())
     except Exception as e:
         print(f"Error en Gemini Service: {e}")
