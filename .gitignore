@@ -1,4 +1,8 @@
-venv/
-.env
+# Ignorar base de datos local y entorno virtual
 __pycache__/
 *.pyc
+.env
+venv/
+
+# Ignorar carpeta de subidas de imágenes
+uploads/
