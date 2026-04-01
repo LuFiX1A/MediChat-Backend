@@ -24,21 +24,21 @@ generation_config = {
     "response_mime_type": "application/json" 
 }
 
-# CAMBIO TÉCNICO: Usamos gemini-1.5-flash para máxima estabilidad en producción
+# Se usa gemini-2.5-flash para máxima estabilidad en producción
 model = genai.GenerativeModel(
     model_name="gemini-2.5-flash", 
     generation_config=generation_config,
     safety_settings=safety_settings
 )
 
-# Agregamos 'confianza_ia' como parámetro opcional para mayor contexto
+# Implementación de 'confianza_ia' como parámetro opcional para mayor contexto
 async def obtener_respuesta_gemini(mensaje_usuario: str, contexto_medico: str, texto_doctores_mongo: str, grado_ia: int = None, confianza_ia: float = None):
     """
     Función central que genera la respuesta del chatbot integrando texto, 
     análisis visual y base de datos de doctores.
     """
     
-    # 1. Construcción de la lógica de quemaduras (Mantenemos tu estructura exacta)
+    # 1. Construcción de la lógica de quemaduras
     info_quemadura = ""
     if grado_ia:
         pautas = {

@@ -3,19 +3,19 @@ import numpy as np
 import uuid
 import os
 
-# Extensiones permitidas según la instrucción del líder
+# Extensiones permitidas
 ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png'}
 
 def validate_image(filename: str) -> bool:
     """
-    Tarea: Verificar que la extensión sea .jpg, .jpeg, .png.
+    Verificar que la extensión sea .jpg, .jpeg, .png.
     """
     ext = os.path.splitext(filename)[1].lower()
     return ext in ALLOWED_EXTENSIONS
 
 def get_unique_filename(filename: str) -> str:
     """
-    Tarea: Usar uuid para devolver un nombre único.
+    Usar uuid para devolver un nombre único.
     Esto evita que dos fotos con el mismo nombre choquen en el servidor.
     """
     ext = os.path.splitext(filename)[1].lower()
@@ -24,7 +24,7 @@ def get_unique_filename(filename: str) -> str:
 
 def preprocess_for_cnn(image_path: str):
     """
-    Tarea: Usar OpenCV para leer, aplicar ecualización y redimensionar a 224x224.
+    Usar OpenCV para leer, aplicar ecualización y redimensionar a 224x224.
     """
     # 1. Leer la imagen desde la ruta proporcionada
     img = cv2.imread(image_path)
@@ -32,7 +32,7 @@ def preprocess_for_cnn(image_path: str):
         raise ValueError(f"No se pudo leer la imagen en {image_path}")
 
     # 2. Ecualización de Histograma (CLAHE) 
-    # Usamos CLAHE para normalizar la iluminación (clave en tu proyecto de quemaduras)
+    # Usamos CLAHE para normalizar la iluminación
     lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
     l_channel, a_channel, b_channel = cv2.split(lab)
     
@@ -46,7 +46,6 @@ def preprocess_for_cnn(image_path: str):
     resized_img = cv2.resize(final_img, (224, 224), interpolation=cv2.INTER_AREA)
 
     # 4. Guardar la imagen procesada sobreescribiendo la original o creando una nueva
-    # Aquí la sobreescribimos para que la que se quede en /uploads sea la limpia
     cv2.imwrite(image_path, resized_img)
     
     return image_path
