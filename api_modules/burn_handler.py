@@ -9,7 +9,7 @@ async def handle_integration_logic(file, user_text, doctors_list):
     confianza = img_analysis.get("confianza", 0)
 
     # 2. Llamada a Gemini mejorada
-    # Le pasamos también la confianza para que Gemini sea más precavido si es baja
+    # Se envia la confianza para que Gemini sea más precavido si es baja
     respuesta_ia = await obtener_respuesta_gemini(
         mensaje_usuario=user_text,
         contexto_medico=f"Triaje inicial. La IA detectó Grado {grado_detectado} con {confianza}% de confianza.",

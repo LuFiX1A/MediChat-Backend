@@ -19,7 +19,7 @@ def cleanup_old_images(max_age_seconds=86400): # 86400 seg = 24 horas
         
     for filename in os.listdir(UPLOAD_DIR):
         file_path = os.path.join(UPLOAD_DIR, filename)
-        # Verificamos si es un archivo y su antigüedad
+        # Verificacion del archivo y su antigüedad
         if os.path.isfile(file_path):
             file_age = os.stat(file_path).st_mtime
             if (now - file_age) > max_age_seconds:
@@ -43,7 +43,6 @@ def setup_storage():
 # --- CARGA DEL MODELO ---
 # Carga el modelo globalmente al importar el servicio
 try:
-    # El archivo .h5 debe estar en la raíz de tu proyecto
     model = tf.keras.models.load_model('modelo_medichat_v5.h5')
     print("✅ Modelo CNN V5 cargado y listo para predicciones")
 except Exception as e:
@@ -62,7 +61,7 @@ async def process_burn_logic(file: UploadFile):
     # Lectura del contenido una vez
     contents = await file.read()
     
-    # Guardamos el archivo en el disco
+    # Se guarda el archivo en el disco
     with open(file_path, "wb") as buffer:
         buffer.write(contents)
 
@@ -80,7 +79,7 @@ async def process_burn_logic(file: UploadFile):
         nparr = np.frombuffer(contents, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
-        # Ajustamos al formato que espera el modelo (224x224, RGB, Normalizado)
+        # Ajuste al formato que espera el modelo (224x224, RGB, Normalizado)
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img_resized = cv2.resize(img_rgb, (224, 224)) 
         img_array = img_resized / 255.0               
@@ -91,7 +90,7 @@ async def process_burn_logic(file: UploadFile):
         probabilidad = float(np.max(predictions))
         grado_idx = int(np.argmax(predictions)) # 0=G1, 1=G2, 2=G3
         
-        # --- NUEVA LÓGICA DE UMBRAL (SEGURIDAD) ---
+        # --- LÓGICA DE UMBRAL (SEGURIDAD) ---
         UMBRAL_MINIMO = 0.70  # Exigimos al menos 70% de certeza
         
         if probabilidad < UMBRAL_MINIMO:
@@ -103,7 +102,7 @@ async def process_burn_logic(file: UploadFile):
                 "error": "Baja confianza en el análisis"
             }
 
-        # Si supera el umbral, asignamos el grado real (1, 2 o 3)
+        # Si supera el umbral, se asigna el grado real (1, 2 o 3)
         grado_real = grado_idx + 1
 
         # 3. Respuesta unificada para el Frontend
