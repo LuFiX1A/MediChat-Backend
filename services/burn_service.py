@@ -68,10 +68,13 @@ async def process_burn_logic(file: UploadFile):
     # 2. Análisis con la Red Neuronal
     if model is None:
         return {
+            "grade": 1,
+            "confidence": 0,
+            "url": f"/uploads/{unique_name}",
+            "error": "El modelo de IA no pudo cargarse en el servidor",
+            # Compatibilidad
             "grado": 1, 
-            "confianza": 0, 
-            "url": f"/uploads/{unique_name}", 
-            "error": "El modelo de IA no pudo cargarse en el servidor"
+            "confianza": 0
         }
 
     try:
@@ -87,39 +90,55 @@ async def process_burn_logic(file: UploadFile):
 
         # --- PREDICCIÓN REAL ---
         predictions = model.predict(img_batch)
-        probabilidad = float(np.max(predictions))
-        grado_idx = int(np.argmax(predictions)) # 0=G1, 1=G2, 2=G3
+        probability = float(np.max(predictions))
+        grade_idx = int(np.argmax(predictions)) # 0=G1, 1=G2, 2=G3
         
         # --- LÓGICA DE UMBRAL (SEGURIDAD) ---
-        UMBRAL_MINIMO = 0.70  # Exigimos al menos 70% de certeza
+        MIN_CONFIDENCE_THRESHOLD = 0.70  # Exigimos al menos 70% de certeza
+        UMBRAL_MINIMO = MIN_CONFIDENCE_THRESHOLD
         
-        if probabilidad < UMBRAL_MINIMO:
+        if probability < MIN_CONFIDENCE_THRESHOLD:
+            confidence_score = round(probability * 100, 2)
+            detail_msg = "La imagen no muestra patrones claros de una quemadura o la confianza es muy baja."
             return {
-                "grado": 0, # Grado 0 indica que no es concluyente
-                "confianza": round(probabilidad * 100, 2),
+                "grade": 0, # Grade 0 indicates inconclusive
+                "confidence": confidence_score,
                 "url": f"/uploads/{unique_name}",
-                "detalle": "La imagen no muestra patrones claros de una quemadura o la confianza es muy baja.",
-                "error": "Baja confianza en el análisis"
+                "detail": detail_msg,
+                "error": "Low confidence in analysis",
+                # Claves en español para compatibilidad
+                "grado": 0,
+                "confianza": confidence_score,
+                "detalle": detail_msg
             }
 
         # Si supera el umbral, se asigna el grado real (1, 2 o 3)
-        grado_real = grado_idx + 1
+        actual_grade = grade_idx + 1
+        confidence_score = round(probability * 100, 2)
+        detail_msg = f"Análisis de IA: Posible Quemadura Grado {actual_grade}"
 
         # 3. Respuesta unificada para el Frontend
         return {
-            "grado": grado_real,
-            "confianza": round(probabilidad * 100, 2),
+            "grade": actual_grade,
+            "confidence": confidence_score,
             "url": f"/uploads/{unique_name}",
-            "detalle": f"Análisis de IA: Posible Quemadura Grado {grado_real}"
+            "detail": detail_msg,
+            # Claves en español para compatibilidad
+            "grado": actual_grade,
+            "confianza": confidence_score,
+            "detalle": detail_msg
         }
 
     except Exception as e:
         print(f"⚠️ Error en análisis de IA: {e}")
         return {
+            "grade": 1,
+            "confidence": 0,
+            "url": f"/uploads/{unique_name}",
+            "error": "Error técnico al procesar la imagen",
+            # Compatibilidad
             "grado": 1, 
-            "confianza": 0, 
-            "url": f"/uploads/{unique_name}", 
-            "error": "Error técnico al procesar la imagen"
+            "confianza": 0
         }
 
 
