@@ -1,5 +1,6 @@
 import os
 import json
+from typing import Optional, Dict, Any, List
 import google.generativeai as genai
 from dotenv import load_dotenv
 
@@ -31,38 +32,54 @@ model = genai.GenerativeModel(
     safety_settings=safety_settings
 )
 
-# Implementación de 'confianza_ia' como parámetro opcional para mayor contexto
-async def obtener_respuesta_gemini(mensaje_usuario: str, contexto_medico: str, texto_doctores_mongo: str, grado_ia: int = None, confianza_ia: float = None):
+# Implementación de 'ai_confidence' como parámetro opcional para mayor contexto
+async def get_gemini_response(
+    user_message: str = "",
+    medical_context: str = "Consulta Médica General",
+    mongo_doctors_text: str = "[]",
+    ai_grade: Optional[int] = None,
+    ai_confidence: Optional[float] = None,
+    **kwargs
+):
     """
     Función central que genera la respuesta del chatbot integrando texto, 
     análisis visual y base de datos de doctores.
+    Central function generating chatbot response integrating text, visual analysis and doctor database.
     """
-    
-    # 1. Construcción de la lógica de quemaduras
-    info_quemadura = ""
-    if grado_ia:
-        pautas = {
+    # Soporte para argumentos heredados en español (Backwards compatibility)
+    user_message = user_message or kwargs.get("mensaje_usuario", "")
+    medical_context = kwargs.get("contexto_medico", medical_context)
+    mongo_doctors_text = kwargs.get("texto_doctores_mongo", mongo_doctors_text)
+    if ai_grade is None:
+        ai_grade = kwargs.get("grado_ia")
+    if ai_confidence is None:
+        ai_confidence = kwargs.get("confianza_ia")
+
+    # 1. Construcción de la lógica de quemaduras (Burn logic construction)
+    burn_info = ""
+    if ai_grade:
+        guidelines = {
             1: "Grado 1 (Epidérmica): Piel roja y seca. Lavar con agua fresca. No usar hielo.",
             2: "Grado 2 (Espesor parcial): Ampollas y dolor intenso. No reventar ampollas. Cubrir con gasa estéril.",
             3: "Grado 3 (Espesor total): Piel blanca o carbonizada. ¡URGENCIA MÉDICA! No retirar ropa pegada."
         }
         # Añadimos la confianza solo como contexto interno para Gemini
-        conf_text = f" con un {confianza_ia}% de certeza" if confianza_ia else ""
-        info_quemadura = f"\n[SISTEMA DE VISIÓN]: Se ha detectado una quemadura de {pautas.get(grado_ia, 'Grado desconocido')}{conf_text}."
+        confidence_text = f" con un {ai_confidence}% de certeza" if ai_confidence else ""
+        burn_info = f"\n[SISTEMA DE VISIÓN]: Se ha detectado una quemadura de {guidelines.get(ai_grade, 'Grado desconocido')}{confidence_text}."
     else:
-        info_quemadura = "\n[SISTEMA DE VISIÓN]: No se proporcionó imagen o no se detectó una quemadura específica."
+        burn_info = "\n[SISTEMA DE VISIÓN]: No se proporcionó imagen o no se detectó una quemadura específica."
 
     # 2. PROMPT FINAL (ESTRUCTURA BASE INTACTA)
-    prompt_final = f"""
+    final_prompt = f"""
     Eres MediChat, un asistente virtual de triaje médico experto. Tu objetivo es orientar al usuario de forma clara, segura y profesional.
 
     CONTEXTO DEL CASO:
-    - Paciente describe: "{mensaje_usuario}"
-    - Entorno: {contexto_medico}
-    {info_quemadura}
+    - Paciente describe: "{user_message}"
+    - Entorno: {medical_context}
+    {burn_info}
 
     BASE DE DATOS DE DOCTORES DISPONIBLES (MongoDB):
-    {texto_doctores_mongo}
+    {mongo_doctors_text}
 
     INSTRUCCIONES DE RESPUESTA:
     1. Evalúa si la consulta es médica. Si no lo es, declina amablemente.
@@ -73,27 +90,68 @@ async def obtener_respuesta_gemini(mensaje_usuario: str, contexto_medico: str, t
 
     FORMATO DE SALIDA (JSON ESTRICTO):
     {{
-        "es_medico": true,
-        "mensaje_al_usuario": "Texto principal de tu respuesta aquí...",
-        "pautas_inmediatas": ["Paso 1", "Paso 2"],
-        "recomendaciones": [
+        "is_medical": true,
+        "user_message": "Texto principal de tu respuesta aquí...",
+        "immediate_guidelines": ["Paso 1", "Paso 2"],
+        "recommendations": [
             {{
-                "nombre_doctor": "Nombre completo",
-                "especialidad": "Especialidad",
-                "id_mongo": "ID del doctor"
+                "doctor_name": "Nombre completo",
+                "specialty": "Especialidad",
+                "mongo_id": "ID del doctor"
             }}
         ]
     }}
     """
 
     try:
-        response = await model.generate_content_async(prompt_final)
-        return json.loads(response.text.strip())
+        response = await model.generate_content_async(final_prompt)
+        raw_response = json.loads(response.text.strip())
+
+        # Sincronización bidireccional entre claves en inglés y español para total compatibilidad
+        is_medical = raw_response.get("is_medical", raw_response.get("es_medico", False))
+        user_msg = raw_response.get("user_message", raw_response.get("mensaje_al_usuario", ""))
+        immediate_guidelines = raw_response.get("immediate_guidelines", raw_response.get("pautas_inmediatas", []))
+        raw_recommendations = raw_response.get("recommendations", raw_response.get("recomendaciones", []))
+
+        normalized_recommendations = []
+        for rec in raw_recommendations:
+            doc_name = rec.get("doctor_name", rec.get("nombre_doctor", ""))
+            specialty = rec.get("specialty", rec.get("especialidad", ""))
+            doc_id = rec.get("mongo_id", rec.get("id_mongo", ""))
+            normalized_recommendations.append({
+                "doctor_name": doc_name,
+                "specialty": specialty,
+                "mongo_id": doc_id,
+                # Claves en español para compatibilidad
+                "nombre_doctor": doc_name,
+                "especialidad": specialty,
+                "id_mongo": doc_id
+            })
+
+        return {
+            "is_medical": is_medical,
+            "user_message": user_msg,
+            "immediate_guidelines": immediate_guidelines,
+            "recommendations": normalized_recommendations,
+            # Claves en español para compatibilidad con el frontend de Ionic
+            "es_medico": is_medical,
+            "mensaje_al_usuario": user_msg,
+            "pautas_inmediatas": immediate_guidelines,
+            "recomendaciones": normalized_recommendations
+        }
     except Exception as e:
         print(f"Error en Gemini Service: {e}")
         return {
+            "is_medical": False,
+            "user_message": "Lo siento, tuve un problema técnico al procesar tu consulta médica.",
+            "immediate_guidelines": [],
+            "recommendations": [],
+            # Claves en español para compatibilidad
             "es_medico": False, 
             "mensaje_al_usuario": "Lo siento, tuve un problema técnico al procesar tu consulta médica.",
             "pautas_inmediatas": [],
             "recomendaciones": []
         }
+
+# Alias para compatibilidad hacia atrás
+obtener_respuesta_gemini = get_gemini_response
