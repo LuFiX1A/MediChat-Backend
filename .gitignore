@@ -6,3 +6,6 @@ venv/
 
 # Ignorar carpeta de subidas de imágenes
 uploads/
+
+# Los scripts y seeds de BD se comparten aparte, no por Git
+database/
