@@ -16,6 +16,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from services.burn_service import setup_storage, process_burn_logic
 from services.gemini_service import get_gemini_response, obtener_respuesta_gemini
 from api_modules.burn_handler import handle_integration_logic
+from api_modules.data_routes import router as data_router
 
 # --- 2. CONFIGURACIÓN INICIAL ---
 load_dotenv()
@@ -24,6 +25,9 @@ app = FastAPI(
     title="MediChat API V5 - Producción",
     description="Backend con CNN real y triaje avanzado por Gemini."
 )
+
+# Endpoints de lectura de las bases de datos híbridas (Supabase + MongoDB)
+app.include_router(data_router)
 
 # --- 3. CONFIGURACIÓN DE CORS ---
 app.add_middleware(
