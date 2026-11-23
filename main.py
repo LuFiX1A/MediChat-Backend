@@ -46,7 +46,7 @@ collection = None
 
 try:
     mongo_client = MongoClient(MONGO_URI)
-    db = mongo_client["VirtualMedDB"]
+    db = mongo_client["HealthTextV2"]
     doctors_collection = db["doctors"]
     collection = doctors_collection  # Alias para compatibilidad hacia atrás
     print("✅ ¡Conexión exitosa a MongoDB Atlas!")
