@@ -1,13 +1,16 @@
-"""Endpoints de solo lectura para las bases de datos de HealthText.
+"""Endpoints de datos (lectura y autenticación) para HealthText.
 
 Se registran en main.py con app.include_router(data_router).
 No modifica los endpoints del chatbot (/chat, /analyze-burn, /analyze-full).
 """
-from typing import Optional
+from datetime import datetime
+from typing import Literal, Optional
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
-from db import MONGO_DATABASE, mongo_client, mongo_db, pg_all, pg_one
+from db import MONGO_DATABASE, mongo_client, mongo_db, pg_all, pg_one, pg_connection
 
 router = APIRouter()
 
@@ -79,10 +82,100 @@ def listar_citas():
 
 @router.get("/users")
 def listar_usuarios():
+    # Nunca devolver password_hash al frontend.
     try:
-        return pg_all("SELECT * FROM users ORDER BY id")
+        return pg_all(
+            "SELECT id, name, email, role, specialty, status, last_access, color "
+            "FROM users ORDER BY id"
+        )
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Error consultando Supabase: {e}")
+
+
+# --------------------------- AUTENTICACIÓN ---------------------------------
+
+class LoginIn(BaseModel):
+    email: str
+    password: str
+
+
+class RegisterIn(BaseModel):
+    name: str
+    email: str
+    password: str
+    role: Literal["Administrador", "Médico", "Enfermería", "Auditor"]
+    color: str = "#2f9cc9"
+
+
+@router.get("/users/exists")
+def correo_existe(email: str):
+    """Usado por el formulario de registro para validar correo duplicado."""
+    try:
+        fila = pg_one(
+            "SELECT 1 AS ok FROM users WHERE lower(email) = %s",
+            (email.strip().lower(),),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Error consultando Supabase: {e}")
+    return {"exists": fila is not None}
+
+
+@router.post("/login")
+def login(body: LoginIn):
+    """Valida credenciales contra users de Supabase. No devuelve password_hash."""
+    try:
+        fila = pg_one(
+            "SELECT id, name, email, role, specialty, password_hash "
+            "FROM users WHERE lower(email) = %s",
+            (body.email.strip().lower(),),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Error consultando Supabase: {e}")
+
+    # El seed usa contraseñas en texto plano solo con fines didácticos.
+    if fila is None or fila["password_hash"] != body.password:
+        raise HTTPException(status_code=401, detail="Credenciales inválidas")
+
+    # Actualizar último acceso no debe impedir el login si falla.
+    try:
+        with pg_connection() as conn:
+            conn.execute(
+                "UPDATE users SET last_access = %s WHERE id = %s",
+                ("Hoy, " + datetime.now().strftime("%H:%M"), fila["id"]),
+            )
+            conn.commit()
+    except Exception:
+        pass
+
+    return {k: fila[k] for k in ("id", "name", "email", "role", "specialty")}
+
+
+@router.post("/register", status_code=201)
+def registrar(body: RegisterIn):
+    """Crea la cuenta directamente en users de Supabase."""
+    email = body.email.strip().lower()
+    nombre = body.name.strip()
+
+    try:
+        existe = pg_one("SELECT 1 AS ok FROM users WHERE lower(email) = %s", (email,))
+        if existe is not None:
+            raise HTTPException(status_code=409, detail="Ya existe una cuenta con ese correo")
+
+        nuevo_id = f"u-reg-{uuid4().hex[:8]}"
+        with pg_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (id, name, email, password_hash, role, status, "
+                "last_access, color) VALUES (%s, %s, %s, %s, %s, 'Activo', "
+                "'Registro reciente', %s)",
+                (nuevo_id, nombre, email, body.password, body.role, body.color),
+            )
+            conn.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Error registrando en Supabase: {e}")
+
+    return {"id": nuevo_id, "name": nombre, "email": email, "role": body.role}
 
 
 @router.get("/audit-logs")
