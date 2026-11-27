@@ -1,0 +1,65 @@
+{
+  "model_name": "HealthText-NLP-TFIDF-LogReg-v1",
+  "trained_at": "2026-11-18T23:39:53.117171Z",
+  "dataset_size": 600,
+  "train_size": 480,
+  "test_size": 120,
+  "classes": [
+    "Bajo",
+    "Medio",
+    "Alto"
+  ],
+  "overall_metrics": {
+    "accuracy": 1.0,
+    "precision_weighted": 1.0,
+    "recall_weighted": 1.0,
+    "f1_score_weighted": 1.0,
+    "precision_macro": 1.0,
+    "recall_macro": 1.0,
+    "f1_score_macro": 1.0
+  },
+  "per_class_metrics": {
+    "Bajo": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "support": 40
+    },
+    "Medio": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "support": 40
+    },
+    "Alto": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "support": 40
+    }
+  },
+  "confusion_matrix": {
+    "labels": [
+      "Bajo",
+      "Medio",
+      "Alto"
+    ],
+    "matrix": [
+      [
+        40,
+        0,
+        0
+      ],
+      [
+        0,
+        40,
+        0
+      ],
+      [
+        0,
+        0,
+        40
+      ]
+    ]
+  }
+}
