@@ -14,6 +14,10 @@ pymongo>=4.9.0
 pandas>=2.2.0
 numpy>=1.26.0,<2.0.0
 opencv-python-headless>=4.10.0.0
+psycopg[binary]>=3.1.0
+PyJWT>=2.9.0
+passlib>=1.7.4
+bcrypt==4.0.1
 
 # --- UTILIDADES ---
 requests>=2.32.0
@@ -24,3 +28,5 @@ typing-extensions
 # --- LIBRERÍAS PARA EL MODELO .H5 ---
 tensorflow-cpu>=2.16.1
 pillow>=10.0.0
+scikit-learn==1.5.2
+joblib==1.4.2
